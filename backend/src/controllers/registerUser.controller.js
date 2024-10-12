@@ -30,7 +30,7 @@ const registerUser=asyncHandler(async(req,res)=>{
     throw new APIError(409,"Username or email already exists");
 
     const avatarLocalPath=req.files?.avatar[0]?.path;
-    const coverImageLocalPath=req.files?.coverImage[0]?.path;
+    const coverImageLocalPath=req.files?.coverImage?.[0]?.path;
     if(!avatarLocalPath)
         throw new APIError(409,"Avatar is required");
     const avatar=await uploadOnCloudinary(avatarLocalPath);
@@ -42,7 +42,7 @@ const registerUser=asyncHandler(async(req,res)=>{
         username,
         email,
         password,
-        avatar:avatar.url,
+        avatar:avatar?.url,
         coverImage:coverImage?.url||"",
     });
     const response=await User.findById(user._id).select("-password -refreshToken");
@@ -55,8 +55,7 @@ const registerUser=asyncHandler(async(req,res)=>{
 
 const loginUser=asyncHandler(async(req,res)=>{
     const {username,password}=req.body;
-    if(username.trim()==""||password.trim()=="")
-        throw new APIError(400,"Fields should not be empty");
+    console.log(req.body);
     const registered=await User.findOne({username});
     if(!registered)
         throw new APIError(400,"User does not exists");
@@ -89,4 +88,36 @@ const logoutUser=asyncHandler(async (req,res)=>{
       }); 
 })
 
-export {registerUser,loginUser,logoutUser};
+const refreshAccessToken=async (req,res)=>{
+    try
+    {
+        const cookieRefreshToken=req.cookies.refreshToken||req.body.refreshToken;
+        if(!cookieRefreshToken)
+            throw new APIError(400,"Unauthorized access");
+        const user=await User.findById(req.user._id);
+        if(!user)
+            throw new APIError(400,"Unauthorized access");
+        const storedRefreshToken=user.refreshToken;
+        if(!storedRefreshToken)
+            throw new APIError(400,"Unauthorized access");
+        if(cookieRefreshToken!==storedRefreshToken)
+            throw new APIError(400,"Unauthorized access");
+        const {accessToken,refreshToken}=await generateAccessAndRefreshToken(req.user._id);
+        const options={
+            httpOnly:true,
+            secure:true,
+        }
+        res.status(200).cookie("accessToken",accessToken,options).cookie("refreshToken",refreshToken,options).json({
+            message:"Access Token provided successfully",
+        })
+    }
+    catch(err)
+    {
+        res.status(err.code).json({
+            status:err.code,
+            message:err.message,
+        })
+    }
+}
+
+export {registerUser,loginUser,logoutUser,refreshAccessToken};
